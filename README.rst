@@ -17,3 +17,5 @@ Dependencies:
    cd gns3-ias
    sudo python3 setup.py install
 
+- virtualenv was used:
+- virtualenv -p /usr/bin/python3.4 --distribute env
