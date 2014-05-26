@@ -199,6 +199,7 @@ class MainHandler(tornado.web.RequestHandler):
 class ImageAccessHandler(tornado.web.RequestHandler):
     def get(self):
         user_id = self.get_argument("user_id")
+        user_region = self.get_argument("user_region")
         gns3_version = self.get_argument("gns3_version")
 
         self.rksp = rackspace_cloud.Rackspace(options['username'], options['apikey'])
