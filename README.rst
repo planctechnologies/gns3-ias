@@ -19,3 +19,4 @@ Dependencies:
 
 - virtualenv was used:
 - virtualenv -p /usr/bin/python3.4 --distribute env
+- sudo apt-get install libcurl4-gnutls-dev

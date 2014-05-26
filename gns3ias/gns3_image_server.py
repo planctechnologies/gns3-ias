@@ -43,14 +43,18 @@ APP_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(
     sys.argv[0])),
     '..')
 
-EXTRA_LIB = "%s/lib" % (SCRIPT_PATH)
+EXTRA_LIB = "%s/modules" % (SCRIPT_PATH)
 
 sys.path.append(APP_SOURCE_PATH)
 sys.path.append(EXTRA_LIB)
 
-# usage method
-def usage():
-    usage = """
+import rackspace_cloud
+
+TOTAL_REQUESTS = 0
+options = {}
+
+
+usage = """
 USAGE: %s
 
 Options:
@@ -60,14 +64,11 @@ Options:
   -h, --help          Display this menu :)
 
   --apikey <api_key>  Rackspace API key           
-  --auth_version
-  --user
-  --key
-  --tenant_name
-
+  --username
+  
+  -p, --port          Server port to run on
 
 """ % (SCRIPT_NAME)
-    return usage
 
 # Parse cmd line options
 def parse_cmd_line(argv):
@@ -78,62 +79,52 @@ def parse_cmd_line(argv):
     config: Global Config object to update with the configuration
     """
 
-    short_args = "dvh"
+    short_args = "dvhp:"
     long_args = ("debug",
                     "verbose",
                     "help",
-                    "batch_size=",
-                    "tmp_dir=",
-                    "container_name=",
-                    "authurl=",
-                    "auth_version=",
-                    "user=",
-                    "key=",
-                    "tenant_name=",
+                    "username=",
+                    "apikey=",
+                    "port=",
                     )
     try:
         opts, extra_opts = getopt.getopt(argv[1:], short_args, long_args)
-    except getopt.GetoptError, e:
-        print "Unrecognized command line option or missing required argument: %s" %(e)
-        print usage()
-        sys.exit(253)
+    except getopt.GetoptError as e:
+        print("Unrecognized command line option or missing required argument: %s" %(e))
+        print(usage)
+        sys.exit(2)
 
     cmd_line_option_list = {}
-    cmd_line_option_list["batch_size"] = 100
     cmd_line_option_list["debug"] = False
     cmd_line_option_list["verbose"] = False
-    cmd_line_option_list["tmp_dir"] = None
-    cmd_line_option_list["container_name"] = None
-    cmd_line_option_list["authurl"] = None
-    cmd_line_option_list["auth_version"] = None
-    cmd_line_option_list["user"] = None
-    cmd_line_option_list["key"] = None
-    cmd_line_option_list["tenant_name"] = None
+    cmd_line_option_list["username"] = None
+    cmd_line_option_list["apikey"] = None
+    cmd_line_option_list["port"] = 80
 
     for opt, val in opts:
         if (opt in ("-h", "--help")):
-            print usage()
+            print(usage)
             sys.exit(0)
         elif (opt in ("-d", "--debug")):
             cmd_line_option_list["debug"] = True
         elif (opt in ("-v", "--verbose")):
             cmd_line_option_list["verbose"] = True
-        elif (opt in ("--batch_size",)):
-            cmd_line_option_list["batch_size"] = val
-        elif (opt in ("--tmp_dir")):
-            cmd_line_option_list["tmp_dir"] = val
-        elif (opt in ("--container_name")):
-            cmd_line_option_list["container_name"] = val
-        elif (opt in ("--authurl")):
-            cmd_line_option_list["authurl"] = val
-        elif (opt in ("--auth_version")):
-            cmd_line_option_list["auth_version"] = val
-        elif (opt in ("--user")):
-            cmd_line_option_list["user"] = val
-        elif (opt in ("--key")):
-            cmd_line_option_list["key"] = val
-        elif (opt in ("--tenant_name")):
-            cmd_line_option_list["tenant_name"] = val
+        elif (opt in ("--username")):
+            cmd_line_option_list["username"] = val
+        elif (opt in ("--apikey")):
+            cmd_line_option_list["apikey"] = val
+        elif (opt in ("-p", "--port")):
+            cmd_line_option_list["port"] = val
+
+    if cmd_line_option_list["username"] is None:
+        print("You need to specific a username!!!!")
+        print(usage)
+        sys.exit(2)
+
+    if cmd_line_option_list["apikey"] is None:
+        print("You need to specific an apikey!!!!")
+        print(usage)
+        sys.exit(2)
 
     return cmd_line_option_list
 
@@ -162,8 +153,9 @@ def set_logging(cmd_options):
     return log
 
 
-def main():
+def main(application):
 
+    global options
     options = parse_cmd_line(sys.argv)
     log = set_logging(options)
     
@@ -179,9 +171,12 @@ def main():
     fp.flush()
 
     log.debug("Using settings:")
-    for key, value in options.iteritems():
+    for key, value in iter(options.items()):
         log.debug("%s : %s" % (key, value))
     
+
+    application.listen(options["port"])
+    tornado.ioloop.IOLoop.instance().start()
 
     #Make sure this gets called at the end, the lock is released on
     #process exit. However if the pid file has a PID in it, it 
@@ -190,18 +185,37 @@ def main():
     fp.close()
 
 
-if (__name__ == '__main__'):
-    result = main()
-    sys.exit(result)
-
 class MainHandler(tornado.web.RequestHandler):
+    starttime = datetime.datetime.now()
+
     def get(self):
-        self.write("Hello, world")
+        message = {
+            'runtime' : "%s" % (datetime.datetime.now() - self.starttime),
+            'total_requests' : TOTAL_REQUESTS,
+        }
+
+        self.write(message)
+
+class ImageAccessHandler(tornado.web.RequestHandler):
+    def get(self):
+        user_id = self.get_argument("user_id")
+        gns3_version = self.get_argument("gns3_version")
+
+        self.rksp = rackspace_cloud.Rackspace(options['username'], options['apikey'])
+
+        gns3_image_id = "FooBar"
+        message = {
+            'user_id' : user_id,
+            'gns3_image_id' : gns3_image_id,
+        }
+
+        self.write(message)
 
 application = tornado.web.Application([
     (r"/", MainHandler),
+    (r"/images/grant_access", ImageAccessHandler),
 ])
 
 if __name__ == "__main__":
-    application.listen(8888)
-    tornado.ioloop.IOLoop.instance().start()
+    result = main(application)
+    sys.exit(result)
