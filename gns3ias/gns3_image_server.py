@@ -68,6 +68,8 @@ Options:
   
   -p, --port          Server port to run on
 
+  --image_id          Override the image id, this is useful for testing.
+
 """ % (SCRIPT_NAME)
 
 # Parse cmd line options
@@ -86,6 +88,7 @@ def parse_cmd_line(argv):
                     "username=",
                     "apikey=",
                     "port=",
+                    "image_id=",
                     )
     try:
         opts, extra_opts = getopt.getopt(argv[1:], short_args, long_args)
@@ -100,6 +103,7 @@ def parse_cmd_line(argv):
     cmd_line_option_list["username"] = None
     cmd_line_option_list["apikey"] = None
     cmd_line_option_list["port"] = 80
+    cmd_line_option_list["image_id"] = None
 
     for opt, val in opts:
         if (opt in ("-h", "--help")):
@@ -115,6 +119,8 @@ def parse_cmd_line(argv):
             cmd_line_option_list["apikey"] = val
         elif (opt in ("-p", "--port")):
             cmd_line_option_list["port"] = val
+        elif (opt in ("--image_id")):
+            cmd_line_option_list["image_id"] = val
 
     if cmd_line_option_list["username"] is None:
         print("You need to specific a username!!!!")
@@ -197,20 +203,38 @@ class MainHandler(tornado.web.RequestHandler):
         self.write(message)
 
 class ImageAccessHandler(tornado.web.RequestHandler):
+    @tornado.web.asynchronous
     def get(self):
-        user_id = self.get_argument("user_id")
-        user_region = self.get_argument("user_region")
-        gns3_version = self.get_argument("gns3_version")
+        self.user_id = self.get_argument("user_id")
+        self.user_region = self.get_argument("user_region")
+        self.gns3_version = self.get_argument("gns3_version")
 
         self.rksp = rackspace_cloud.Rackspace(options['username'], options['apikey'])
+        self.rksp.get_token(self._get_gns3_images)
 
-        gns3_image_id = "FooBar"
-        message = {
-            'user_id' : user_id,
-            'gns3_image_id' : gns3_image_id,
-        }
+    def _send_to_client(self, data):
 
-        self.write(message)
+        self.write(data)
+        self.finish()
+
+    def _share_image(self, image_list):
+        
+        for image in image_list:
+            if image["name"].find(self.gns3_version):
+                image_id = image["id"]
+       
+
+        if options["image_id"]:
+            image_id = options["image_id"]
+
+        self.rksp.share_image_by_id(self._send_to_client,
+                    self.user_id,
+                    image_id
+                )
+
+    def _get_gns3_images(self):
+        self.rksp.get_gns3_images(self._share_image, self.user_region)
+
 
 application = tornado.web.Application([
     (r"/", MainHandler),
