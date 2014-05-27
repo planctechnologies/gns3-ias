@@ -133,18 +133,27 @@ class Rackspace(object):
         Share the provided image ID with the tenant ID
         """
         self._share_image_by_id_callback = callback
+        self.tenant_id = tenant_id
+        self.image_id = image_id
 
         request_data = json.dumps({
-            "member": tenant_id
+            "member": self.tenant_id
             })
 
         request_url = "%s/images/%s/members" % (self.my_region_images_public_endpoint_url, 
-            image_id)
+            self.image_id)
         self._build_http_request(self._got_share_image_by_id, request_url, request_data)
 
     def _got_share_image_by_id(self, response):
-        response.rethrow()
-        data = json.loads(response.body.decode('utf8'))
+        if response.code == 409:
+
+            data = { "image_id": self.image_id, 
+                "member_id": self.tenant_id, 
+                "status": "ALREADYREQUESTED"
+                }
+        else:
+            response.rethrow()
+            data = json.loads(response.body.decode('utf8'))
 
         if self._share_image_by_id_callback:
             self._share_image_by_id_callback(data)
