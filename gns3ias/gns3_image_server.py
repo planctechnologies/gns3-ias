@@ -90,7 +90,7 @@ def parse_cmd_line(argv):
     argv: Pass in cmd line arguments
     """
 
-    short_args = "dvhp:"
+    short_args = "dvhkp:"
     long_args = ("debug",
                     "verbose",
                     "help",
@@ -198,6 +198,14 @@ def set_logging(cmd_options):
 
     return log
 
+def send_shutdown(pid_file):
+    with open(pid_file, 'r') as pidf:
+        pid = int(pidf.readline().strip())
+        pidf.close()
+
+        
+    os.kill(pid, 15)
+
 
 def main(application):
 
@@ -211,15 +219,16 @@ def main(application):
         the log vars.
         """
 
-        log.warring("Received shutdown signal")
+        log.warning("Received shutdown signal")
         tornado.ioloop.IOLoop.instance().stop()
-        log.warring("IO stopped")
+        log.warning("IO stopped")
 
 
     pid_file = "%s/%s.pid" % (SCRIPT_PATH, SCRIPT_NAME)
 
     if options["shutdown"]:
-        os.Kill(pid_file)
+        send_shutdown(pid_file)
+        sys.exit(0)
 
     fp = open(pid_file, 'w')
     try:
@@ -231,8 +240,7 @@ def main(application):
     fp.write("%s"%(os.getpid()))
     fp.flush()
 
-    ## Setup signal to catch Control-C / SIGINT
-    ## To make sure we close all threads
+    # Setup signal to catch Control-C / SIGINT and SIGTERM
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
