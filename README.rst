@@ -11,12 +11,16 @@ Dependencies:
 - Python version 3.3 or above
 - pip & setuptools must be installed, please see http://pip.readthedocs.org/en/latest/installing.html
   (or sudo apt-get install python3-pip but install more packages)
+- virtualenv was used during development
+- virtualenv -p /usr/bin/python3.4 --distribute env (Remember to activate your virtualenv if used )
+- pycurl, to install pip install pycurl
+- python-dateutil, to install pip install python-dateutil
+- sudo apt-get install libcurl4-gnutls-dev
 
 .. code:: bash
 
    cd gns3-ias
+   virtualenv -p /usr/bin/python3.4 --distribute env
+   source ./env/bin/activate
    sudo python3 setup.py install
 
-- virtualenv was used:
-- virtualenv -p /usr/bin/python3.4 --distribute env
-- sudo apt-get install libcurl4-gnutls-dev

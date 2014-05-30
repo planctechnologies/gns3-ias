@@ -23,6 +23,11 @@
 # or negative for a release candidate or beta (after the base version
 # number has been incremented)
 
+"""
+Shares Rackspace GNS3 server images with other Rackspace customers. In theory 
+any cloud provider could be used.
+"""
+
 import os
 import sys
 import time
@@ -31,6 +36,8 @@ import datetime
 import logging
 import fcntl
 import glob
+import json
+import signal
 
 import tornado.ioloop
 import tornado.web
@@ -51,6 +58,7 @@ sys.path.append(EXTRA_LIB)
 import rackspace_cloud
 
 TOTAL_REQUESTS = 0
+TOTAL_REQUESTS_ERRORS = 0
 options = {}
 
 
@@ -63,12 +71,14 @@ Options:
   -v, --verbose       Enable verbose logging
   -h, --help          Display this menu :)
 
-  --apikey <api_key>  Rackspace API key           
-  --username
+  --cloud_api_key <api_key>  Rackspace API key           
+  --cloud_user_name
   
   -p, --port          Server port to run on
 
   --image_id          Override the image id, this is useful for testing.
+
+  -k                  Kill previous instance running in background
 
 """ % (SCRIPT_NAME)
 
@@ -78,15 +88,14 @@ def parse_cmd_line(argv):
     Parse command line arguments
 
     argv: Pass in cmd line arguments
-    config: Global Config object to update with the configuration
     """
 
     short_args = "dvhp:"
     long_args = ("debug",
                     "verbose",
                     "help",
-                    "username=",
-                    "apikey=",
+                    "cloud_user_name=",
+                    "cloud_api_key=",
                     "port=",
                     "image_id=",
                     )
@@ -100,10 +109,13 @@ def parse_cmd_line(argv):
     cmd_line_option_list = {}
     cmd_line_option_list["debug"] = False
     cmd_line_option_list["verbose"] = False
-    cmd_line_option_list["username"] = None
-    cmd_line_option_list["apikey"] = None
-    cmd_line_option_list["port"] = 80
+    cmd_line_option_list["cloud_user_name"] = None
+    cmd_line_option_list["cloud_api_key"] = None
+    cmd_line_option_list["port"] = 8888
     cmd_line_option_list["image_id"] = None
+    cmd_line_option_list["shutdown"] = False
+
+    get_gns3secrets(cmd_line_option_list)
 
     for opt, val in opts:
         if (opt in ("-h", "--help")):
@@ -113,29 +125,57 @@ def parse_cmd_line(argv):
             cmd_line_option_list["debug"] = True
         elif (opt in ("-v", "--verbose")):
             cmd_line_option_list["verbose"] = True
-        elif (opt in ("--username")):
-            cmd_line_option_list["username"] = val
-        elif (opt in ("--apikey")):
-            cmd_line_option_list["apikey"] = val
+        elif (opt in ("--cloud_user_name")):
+            cmd_line_option_list["cloud_user_name"] = val
+        elif (opt in ("--cloud_api_key")):
+            cmd_line_option_list["cloud_api_key"] = val
         elif (opt in ("-p", "--port")):
             cmd_line_option_list["port"] = val
         elif (opt in ("--image_id")):
             cmd_line_option_list["image_id"] = val
+        elif (opt in ("-k")):
+            cmd_line_option_list["shutdown"] = True
 
-    if cmd_line_option_list["username"] is None:
-        print("You need to specific a username!!!!")
+    if cmd_line_option_list["cloud_user_name"] is None:
+        print("You need to specify a username!!!!")
         print(usage)
         sys.exit(2)
 
-    if cmd_line_option_list["apikey"] is None:
-        print("You need to specific an apikey!!!!")
+    if cmd_line_option_list["cloud_api_key"] is None:
+        print("You need to specify an apikey!!!!")
         print(usage)
         sys.exit(2)
 
     return cmd_line_option_list
 
+def get_gns3secrets(cmd_line_option_list):
+    """
+    Load cloud credentials from .gns3secrets
+    """
+
+    gns3secret_paths = [
+        os.path.expanduser("~/"),
+        SCRIPT_PATH,
+    ]
+
+    for gns3secret_path in gns3secret_paths:
+        gns3secret_file = "%s/.gns3secrets" % (gns3secret_path)
+        if os.path.isfile(gns3secret_file):
+            with open(gns3secret_file, 'r') as sec_file:
+                for line in sec_file:
+                    try:
+                        (key, value) = line.split(":")
+                        if key in cmd_line_option_list:
+                            cmd_line_option_list[key] = value.strip()
+                    except ValueError:
+                        pass
+
+
+
 def set_logging(cmd_options):
-    #Setup logging
+    """
+    Setup logging and format output
+    """
     log = logging.getLogger("%s" % (SCRIPT_NAME))
     log_level = logging.INFO
     log_level_console = logging.WARNING
@@ -164,8 +204,23 @@ def main(application):
     global options
     options = parse_cmd_line(sys.argv)
     log = set_logging(options)
-    
+
+    def _shutdown(signalnum, frame):
+        """
+        Handles the SIGINT and SIGTERM event, inside of main so it has access to
+        the log vars.
+        """
+
+        log.warring("Received shutdown signal")
+        tornado.ioloop.IOLoop.instance().stop()
+        log.warring("IO stopped")
+
+
     pid_file = "%s/%s.pid" % (SCRIPT_PATH, SCRIPT_NAME)
+
+    if options["shutdown"]:
+        os.Kill(pid_file)
+
     fp = open(pid_file, 'w')
     try:
         fcntl.lockf(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -176,8 +231,13 @@ def main(application):
     fp.write("%s"%(os.getpid()))
     fp.flush()
 
+    ## Setup signal to catch Control-C / SIGINT
+    ## To make sure we close all threads
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
     log.debug("Using settings:")
-    for key, value in iter(options.items()):
+    for key, value in iter(sorted(options.items())):
         log.debug("%s : %s" % (key, value))
     
 
@@ -195,16 +255,38 @@ class MainHandler(tornado.web.RequestHandler):
     starttime = datetime.datetime.now()
 
     def get(self):
+        """
+        Handlers standard GET request for this http server at the base ("/") 
+        path.
+
+        We want to return help metrics, like a service health check.
+        """
+
         message = {
             'runtime' : "%s" % (datetime.datetime.now() - self.starttime),
             'total_requests' : TOTAL_REQUESTS,
         }
 
-        self.write(message)
+        client_json = json.dumps(message)
+        client_json = client_json + "\n"
+
+        self.write(client_json)
 
 class ImageAccessHandler(tornado.web.RequestHandler):
     @tornado.web.asynchronous
     def get(self):
+        """
+        Handles the api call from clients:
+        exmaple_image.com/images/grant_access?user_id=1234&user_region=IAD&gns3_version=3.0
+
+        All the params are required:
+        user_id: Rackspace Tenant id
+        user_region: Rackspace region
+        gns3_version: Version of the server image the client wants access to.
+
+        Everything in this class is done asynchronously
+
+        """
         self.user_id = self.get_argument("user_id")
         self.user_region = self.get_argument("user_region")
         self.gns3_version = self.get_argument("gns3_version")
@@ -212,13 +294,21 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         self.rksp = rackspace_cloud.Rackspace(options['username'], options['apikey'])
         self.rksp.get_token(self._get_gns3_images)
 
-    def _send_to_client(self, data):
-
-        self.write(data)
-        self.finish()
+    def _get_gns3_images(self):
+        """
+        Gets a list of all images in a specific region
+        """
+        self.rksp.get_gns3_images(self._share_image, self.user_region)
 
     def _share_image(self, image_list):
-        
+        """
+        Gets the ID of a matching image and shares it with a tenant.
+
+        The image ID that is shared can be overwritten with a command line
+        argument (--image_id=<id>). This makes testing easier.
+
+        gns3_<version>
+        """
         for image in image_list:
             if image["name"].find(self.gns3_version):
                 image_id = image["id"]
@@ -228,12 +318,21 @@ class ImageAccessHandler(tornado.web.RequestHandler):
             image_id = options["image_id"]
 
         self.rksp.share_image_by_id(self._send_to_client,
-                    self.user_id,
-                    image_id
-                )
+            self.user_id,
+            image_id
+        )
 
-    def _get_gns3_images(self):
-        self.rksp.get_gns3_images(self._share_image, self.user_region)
+    def _send_to_client(self, data):
+        """
+        Send the ID to the client and close this connection via self.finish().
+
+        We need to explicitly call self.finish to close the connection because
+        we are using the @tornado.web.asynchronous decorator.
+        """
+
+        self.write(data)
+        self.finish()
+
 
 
 application = tornado.web.Application([
@@ -244,3 +343,5 @@ application = tornado.web.Application([
 if __name__ == "__main__":
     result = main(application)
     sys.exit(result)
+
+
