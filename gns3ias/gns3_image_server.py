@@ -58,7 +58,8 @@ sys.path.append(EXTRA_LIB)
 import rackspace_cloud
 
 TOTAL_REQUESTS = 0
-TOTAL_REQUESTS_ERRORS = 0
+TOTAL_REQUESTS_OK = 0
+LAST_REQUEST_TIME = None
 options = {}
 
 
@@ -196,6 +197,10 @@ def set_logging(cmd_options):
     log.setLevel(log_level)
     log.addHandler(console_log)
 
+    access_log = logging.getLogger("tornado.access")
+    access_log.setLevel(log_level)
+    access_log.addHandler(console_log)
+
     return log
 
 def send_shutdown(pid_file):
@@ -203,7 +208,7 @@ def send_shutdown(pid_file):
         pid = int(pidf.readline().strip())
         pidf.close()
 
-        
+
     os.kill(pid, 15)
 
 
@@ -273,6 +278,8 @@ class MainHandler(tornado.web.RequestHandler):
         message = {
             'runtime' : "%s" % (datetime.datetime.now() - self.starttime),
             'total_requests' : TOTAL_REQUESTS,
+            'total_requests_ok' : TOTAL_REQUESTS_OK,
+            'last_request_time' : LAST_REQUEST_TIME,
         }
 
         client_json = json.dumps(message)
@@ -295,6 +302,9 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         Everything in this class is done asynchronously
 
         """
+        TOTAL_REQUESTS+=1
+        LAST_REQUEST_TIME = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        
         self.user_id = self.get_argument("user_id")
         self.user_region = self.get_argument("user_region")
         self.gns3_version = self.get_argument("gns3_version")
@@ -339,6 +349,7 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         """
 
         self.write(data)
+        TOTAL_REQUESTS_OK+=1
         self.finish()
 
 
