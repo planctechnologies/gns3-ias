@@ -52,15 +52,32 @@ APP_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(
 
 EXTRA_LIB = "%s/modules" % (SCRIPT_PATH)
 
+LOG_NAME = "gns3_image_server"
+log = None
+
 sys.path.append(APP_SOURCE_PATH)
 sys.path.append(EXTRA_LIB)
 
 import rackspace_cloud
 
-TOTAL_REQUESTS = 0
-TOTAL_REQUESTS_OK = 0
-LAST_REQUEST_TIME = None
-options = {}
+api_info = {
+    'auth_response' : None,
+    'cloud_user_name' : None,
+    'cloud_api_key' : None,
+    'image_id' : None,
+}
+
+stats = {
+    'client_total_requests' : 0,
+    'client_total_requests_ok' : 0,
+    'client_last_request_time' : None,
+    'app_start_time' : datetime.datetime.now(),
+}
+
+stats_n_api = {
+    'stats' : stats,
+    'api_info' : api_info,
+}
 
 
 usage = """
@@ -177,7 +194,7 @@ def set_logging(cmd_options):
     """
     Setup logging and format output
     """
-    log = logging.getLogger("%s" % (SCRIPT_NAME))
+    log = logging.getLogger("%s" % (LOG_NAME))
     log_level = logging.INFO
     log_level_console = logging.WARNING
 
@@ -214,9 +231,13 @@ def send_shutdown(pid_file):
 
 def main(application):
 
-    global options
+    global log
     options = parse_cmd_line(sys.argv)
     log = set_logging(options)
+
+    api_info['cloud_user_name'] = options['cloud_user_name']
+    api_info['cloud_api_key'] = options['cloud_api_key']
+    api_info['image_id'] = options['image_id']
 
     def _shutdown(signalnum, frame):
         """
@@ -255,6 +276,7 @@ def main(application):
     
 
     application.listen(options["port"])
+    log.warning("Starting ...")
     tornado.ioloop.IOLoop.instance().start()
 
     #Make sure this gets called at the end, the lock is released on
@@ -263,9 +285,18 @@ def main(application):
     fp.truncate(0)
     fp.close()
 
+class THandler(tornado.web.RequestHandler):
+    def get(self):
+        token = api_info['auth_response']["access"]["token"]["id"]
+        print(token)
+        new_token = "46539cd6ef8a4b289d62df69c4458545"
+        api_info['auth_response']["access"]["token"]["id"] = new_token
+        self.write(token)
+
 
 class MainHandler(tornado.web.RequestHandler):
-    starttime = datetime.datetime.now()
+    def initialize(self, stats):
+        self.stats = stats
 
     def get(self):
         """
@@ -276,10 +307,10 @@ class MainHandler(tornado.web.RequestHandler):
         """
 
         message = {
-            'runtime' : "%s" % (datetime.datetime.now() - self.starttime),
-            'total_requests' : TOTAL_REQUESTS,
-            'total_requests_ok' : TOTAL_REQUESTS_OK,
-            'last_request_time' : LAST_REQUEST_TIME,
+            'runtime' : "%s" % (datetime.datetime.now() - self.stats['app_start_time']),
+            'total_requests' : self.stats['client_total_requests'],
+            'total_requests_ok' : self.stats['client_total_requests_ok'],
+            'last_request_time' : self.stats['client_last_request_time'],
         }
 
         client_json = json.dumps(message)
@@ -288,6 +319,10 @@ class MainHandler(tornado.web.RequestHandler):
         self.write(client_json)
 
 class ImageAccessHandler(tornado.web.RequestHandler):
+    def initialize(self, stats, api_info):
+        self.stats = stats
+        self.api_info = api_info
+
     @tornado.web.asynchronous
     def get(self):
         """
@@ -302,15 +337,31 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         Everything in this class is done asynchronously
 
         """
-        TOTAL_REQUESTS+=1
-        LAST_REQUEST_TIME = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.stats['client_total_requests']+=1
+        self.stats['client_last_request_time'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         
         self.user_id = self.get_argument("user_id")
         self.user_region = self.get_argument("user_region")
         self.gns3_version = self.get_argument("gns3_version")
 
-        self.rksp = rackspace_cloud.Rackspace(options['username'], options['apikey'])
-        self.rksp.get_token(self._get_gns3_images)
+        self.rksp = rackspace_cloud.Rackspace(
+                self._get_gns3_images,
+                self.api_info['cloud_user_name'], 
+                self.api_info['cloud_api_key'],
+                self.api_info['auth_response'],
+                self._set_auth_cache,
+            )
+
+    def _set_auth_cache(self, data):
+        self.api_info['auth_response'] = data
+        log.info("Cache updated")
+
+    def _print_images(self, image_list):
+        for image in image_list:
+            print(image)
+
+        self.write("Thanks\n")
+        self.finish()
 
     def _get_gns3_images(self):
         """
@@ -332,8 +383,8 @@ class ImageAccessHandler(tornado.web.RequestHandler):
                 image_id = image["id"]
        
 
-        if options["image_id"]:
-            image_id = options["image_id"]
+        if self.api_info["image_id"]:
+            image_id = self.api_info["image_id"]
 
         self.rksp.share_image_by_id(self._send_to_client,
             self.user_id,
@@ -349,14 +400,15 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         """
 
         self.write(data)
-        TOTAL_REQUESTS_OK+=1
+        self.stats['client_total_requests_ok']+=1
         self.finish()
 
 
 
 application = tornado.web.Application([
-    (r"/", MainHandler),
-    (r"/images/grant_access", ImageAccessHandler),
+    (r"/", MainHandler, dict(stats=stats)),
+    (r"/images/grant_access", ImageAccessHandler, stats_n_api),
+    (r"/test/", THandler),
 ])
 
 if __name__ == "__main__":
