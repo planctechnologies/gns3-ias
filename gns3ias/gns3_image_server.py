@@ -58,6 +58,7 @@ log = None
 sys.path.append(APP_SOURCE_PATH)
 sys.path.append(EXTRA_LIB)
 
+import daemon
 import rackspace_cloud
 
 api_info = {
@@ -79,6 +80,7 @@ stats_n_api = {
     'api_info' : api_info,
 }
 
+my_daemon = None 
 
 usage = """
 USAGE: %s
@@ -97,6 +99,7 @@ Options:
   --image_id          Override the image id, this is useful for testing.
 
   -k                  Kill previous instance running in background
+  --background        Run in background
 
 """ % (SCRIPT_NAME)
 
@@ -116,6 +119,7 @@ def parse_cmd_line(argv):
                     "cloud_api_key=",
                     "port=",
                     "image_id=",
+                    "background",
                     )
     try:
         opts, extra_opts = getopt.getopt(argv[1:], short_args, long_args)
@@ -126,12 +130,13 @@ def parse_cmd_line(argv):
 
     cmd_line_option_list = {}
     cmd_line_option_list["debug"] = False
-    cmd_line_option_list["verbose"] = False
+    cmd_line_option_list["verbose"] = True
     cmd_line_option_list["cloud_user_name"] = None
     cmd_line_option_list["cloud_api_key"] = None
     cmd_line_option_list["port"] = 8888
     cmd_line_option_list["image_id"] = None
     cmd_line_option_list["shutdown"] = False
+    cmd_line_option_list["daemon"] = False
 
     get_gns3secrets(cmd_line_option_list)
 
@@ -153,6 +158,8 @@ def parse_cmd_line(argv):
             cmd_line_option_list["image_id"] = val
         elif (opt in ("-k")):
             cmd_line_option_list["shutdown"] = True
+        elif (opt in ("--background")):
+            cmd_line_option_list["daemon"] = True
 
     if cmd_line_option_list["cloud_user_name"] is None:
         print("You need to specify a username!!!!")
@@ -229,17 +236,19 @@ def send_shutdown(pid_file):
     os.kill(pid, 15)
 
 
+
 def main(application):
 
     global log
+    global my_daemon
     options = parse_cmd_line(sys.argv)
-    log = set_logging(options)
+    log = set_logging(options)   
 
     api_info['cloud_user_name'] = options['cloud_user_name']
     api_info['cloud_api_key'] = options['cloud_api_key']
     api_info['image_id'] = options['image_id']
 
-    def _shutdown(signalnum, frame):
+    def _shutdown(signalnum=None, frame=None):
         """
         Handles the SIGINT and SIGTERM event, inside of main so it has access to
         the log vars.
@@ -248,7 +257,7 @@ def main(application):
         log.warning("Received shutdown signal")
         tornado.ioloop.IOLoop.instance().stop()
         log.warning("IO stopped")
-
+        
 
     pid_file = "%s/%s.pid" % (SCRIPT_PATH, SCRIPT_NAME)
 
@@ -256,15 +265,9 @@ def main(application):
         send_shutdown(pid_file)
         sys.exit(0)
 
-    fp = open(pid_file, 'w')
-    try:
-        fcntl.lockf(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except IOError:
-        log.critical("Another instance is already running!!!!!")
-        sys.exit(1)
-
-    fp.write("%s"%(os.getpid()))
-    fp.flush()
+    if options["daemon"]:
+        print("Starting in background ...\n")
+        my_daemon = MyDaemon(pid_file, options)
 
     # Setup signal to catch Control-C / SIGINT and SIGTERM
     signal.signal(signal.SIGINT, _shutdown)
@@ -274,25 +277,19 @@ def main(application):
     for key, value in iter(sorted(options.items())):
         log.debug("%s : %s" % (key, value))
     
-
-    application.listen(options["port"])
     log.warning("Starting ...")
-    tornado.ioloop.IOLoop.instance().start()
 
-    #Make sure this gets called at the end, the lock is released on
-    #process exit. However if the pid file has a PID in it, it 
-    #means an unclean shutdown occurred.
-    fp.truncate(0)
-    fp.close()
+    if my_daemon:
+        my_daemon.start()
+    else:
+        application.listen(options["port"])
+        tornado.ioloop.IOLoop.instance().start()
 
-class THandler(tornado.web.RequestHandler):
-    def get(self):
-        token = api_info['auth_response']["access"]["token"]["id"]
-        print(token)
-        new_token = "46539cd6ef8a4b289d62df69c4458545"
-        api_info['auth_response']["access"]["token"]["id"] = new_token
-        self.write(token)
 
+class MyDaemon(daemon.daemon):
+    def run(self):
+        application.listen(self.options["port"])
+        tornado.ioloop.IOLoop.instance().start()
 
 class MainHandler(tornado.web.RequestHandler):
     def initialize(self, stats):
@@ -408,7 +405,6 @@ class ImageAccessHandler(tornado.web.RequestHandler):
 application = tornado.web.Application([
     (r"/", MainHandler, dict(stats=stats)),
     (r"/images/grant_access", ImageAccessHandler, stats_n_api),
-    (r"/test/", THandler),
 ])
 
 if __name__ == "__main__":
