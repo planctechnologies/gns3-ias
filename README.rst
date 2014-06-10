@@ -22,5 +22,7 @@ Dependencies:
    cd gns3-ias
    virtualenv -p /usr/bin/python3.4 --distribute env
    source ./env/bin/activate
-   sudo python3 setup.py install
+   python setup.py install
+   cd gns3ias
+   python gns3_image_server.py
 
