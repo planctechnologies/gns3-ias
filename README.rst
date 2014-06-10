@@ -13,9 +13,9 @@ Dependencies:
   (or sudo apt-get install python3-pip but install more packages)
 - virtualenv was used during development
 - virtualenv -p /usr/bin/python3.4 --distribute env (Remember to activate your virtualenv if used )
-- pycurl, to install pip install pycurl
-- python-dateutil, to install pip install python-dateutil
 - sudo apt-get install libcurl4-gnutls-dev
+- python-dateutil, to install pip install python-dateutil
+- pycurl, to install pip install pycurl
 
 .. code:: bash
 
