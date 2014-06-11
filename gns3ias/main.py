@@ -237,7 +237,12 @@ def send_shutdown(pid_file):
 
     os.kill(pid, 15)
 
-def main(application):
+def main():
+
+    application = tornado.web.Application([
+        (r"/", MainHandler, dict(stats=stats)),
+        (r"/images/grant_access", ImageAccessHandler, stats_n_api),
+    ])
 
     global log
     global my_daemon
@@ -401,14 +406,8 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         self.finish()
 
 
-
-application = tornado.web.Application([
-    (r"/", MainHandler, dict(stats=stats)),
-    (r"/images/grant_access", ImageAccessHandler, stats_n_api),
-])
-
 if __name__ == "__main__":
-    result = main(application)
+    result = main()
     sys.exit(result)
 
 
