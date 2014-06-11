@@ -35,7 +35,7 @@ from datetime import *
 import logging
 from functools import partial
 
-LOG_NAME = "gns3_image_server"
+LOG_NAME = "gns3ias"
 log = logging.getLogger("%s" % (LOG_NAME))
 
 class Rackspace(object):

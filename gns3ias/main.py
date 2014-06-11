@@ -43,19 +43,21 @@ import tornado.ioloop
 import tornado.web
 
 SCRIPT_NAME = os.path.basename(__file__)
-SCRIPT_PATH = os.path.join(os.path.dirname(os.path.abspath(
-    sys.argv[0])))
 
-APP_SOURCE_PATH = os.path.join(os.path.dirname(os.path.abspath(
-    sys.argv[0])),
-    '..')
+#Is the full path when used as an import
+SCRIPT_PATH = os.path.dirname(__file__)
+
+if not SCRIPT_PATH:
+    SCRIPT_PATH = os.path.join(os.path.dirname(os.path.abspath(
+        sys.argv[0])))
+
 
 EXTRA_LIB = "%s/modules" % (SCRIPT_PATH)
 
-LOG_NAME = "gns3_image_server"
+
+LOG_NAME = "gns3ias"
 log = None
 
-sys.path.append(APP_SOURCE_PATH)
 sys.path.append(EXTRA_LIB)
 
 import daemon
@@ -234,8 +236,6 @@ def send_shutdown(pid_file):
 
 
     os.kill(pid, 15)
-
-
 
 def main(application):
 

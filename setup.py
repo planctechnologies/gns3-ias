@@ -57,7 +57,6 @@ setup(
             ]
         },
     packages=find_packages(),
-    package_data={"gns3ias": ["templates/upload.html"]},
     include_package_data=True,
     platforms="any",
     classifiers=[
