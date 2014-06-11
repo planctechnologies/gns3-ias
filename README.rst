@@ -24,5 +24,5 @@ Dependencies:
    source ./env/bin/activate
    python setup.py install
    cd gns3ias
-   gns3ias
+   gns3ias or gns3ias --help
 
