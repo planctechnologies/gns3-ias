@@ -38,6 +38,7 @@ import fcntl
 import glob
 import json
 import signal
+import configparser
 
 import tornado.ioloop
 import tornado.web
@@ -185,18 +186,15 @@ def get_gns3secrets(cmd_line_option_list):
         SCRIPT_PATH,
     ]
 
-    for gns3secret_path in gns3secret_paths:
-        gns3secret_file = "%s/.gns3secrets" % (gns3secret_path)
-        if os.path.isfile(gns3secret_file):
-            with open(gns3secret_file, 'r') as sec_file:
-                for line in sec_file:
-                    try:
-                        (key, value) = line.split(":")
-                        if key in cmd_line_option_list:
-                            cmd_line_option_list[key] = value.strip()
-                    except ValueError:
-                        pass
+    config = configparser.ConfigParser()
 
+    for gns3secret_path in gns3secret_paths:
+        gns3secret_file = "%s/.gns3secrets.conf" % (gns3secret_path)
+        if os.path.isfile(gns3secret_file):
+            config.read(gns3secret_file)
+
+    for key, value in config.items("Cloud"):
+        cmd_line_option_list[key] = value.strip()
 
 
 def set_logging(cmd_options):
