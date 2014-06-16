@@ -47,7 +47,9 @@ setup(
     install_requires=[
         "tornado>=3.1",
         "pyzmq>=13.1.0",  # this is the strict minimum, recommended is >= 14.0.0
-        "jsonschema==2.3.0"
+        "jsonschema==2.3.0",
+        "pycurl>=7.19.3.1",
+        "python-dateutil>=2.2",
         ],
     entry_points={
         "console_scripts": [
@@ -55,7 +57,6 @@ setup(
             ]
         },
     packages=find_packages(),
-    package_data={"gns3ias": ["templates/upload.html"]},
     include_package_data=True,
     platforms="any",
     classifiers=[

@@ -23,32 +23,51 @@
 # or negative for a release candidate or beta (after the base version
 # number has been incremented)
 
+import os
 import json
+import tornado.ioloop
 import tornado.httpclient
 import urllib.request
 import urllib.parse
 from dateutil.parser import *
 from dateutil.tz import *
 from datetime import *
+import logging
+from functools import partial
 
-
-
+LOG_NAME = "gns3ias"
+log = logging.getLogger("%s" % (LOG_NAME))
 
 class Rackspace(object):
-    def __init__(self, username, apikey):
+    def __init__(self, callback, username, apikey, auth_cache=None, set_auth_cache=None):
         self.username = username
         self.apikey = apikey
-        self.token = None
-        self.token_expire_date = None
-        self.auth_response = None
+        self.auth_response = auth_cache
+        self.region_images_public_endpoint_url = None
+        self.set_auth_cache = set_auth_cache
+
+        #Because of the number of callbacks and async style, if a request fails
+        #we have no way of knowning triggered the last request, so we need
+        #to track that info.
+        self.last_request_params = None
+
+        if self.auth_response is None:
+            self.get_token(callback)
+        else:
+            io_loop = tornado.ioloop.IOLoop.instance()
+            io_loop.add_callback(callback)
 
     def _build_http_request(self, callback, request_url, request_data=None):
+
+        self.last_request_params = [callback, request_url, request_data]
 
         request_method = "GET"
         request_headers = {"Content-Type" : "application/json"}
 
-        if self.token:
-            request_headers["X-Auth-Token"] = self.token
+        if self.auth_response:
+            token = self.auth_response["access"]["token"]["id"]
+            request_headers["X-Auth-Token"] = token
+            log.info("Auth Token: %s" % (token))
 
         if request_data:
             request_method = "POST"        
@@ -64,7 +83,20 @@ class Rackspace(object):
         http_client = tornado.httpclient.AsyncHTTPClient()
         http_client.fetch(http_request, callback)
 
+    def _repeat_last_http_request(self):
+        self._build_http_request(*self.last_request_params)
+
+    def _check_authentication(self,response):
+        if response.error:
+            if response.code == 401:
+                self.get_token(self._repeat_last_http_request)
+            else:
+                response.rethrow()
+
+
     def get_token(self, callback=None):
+        log.info("Requesting auth token")
+        self.auth_response = None
         self._get_token_callback = callback
         request_url = "https://identity.api.rackspacecloud.com/v2.0/tokens"
         request_data = json.dumps({
@@ -82,8 +114,7 @@ class Rackspace(object):
 
         response.rethrow()
         data = json.loads(response.body.decode('utf8'))
-        self.token = data["access"]["token"]["id"]
-        self.token_expire_date = parse(data["access"]["token"]["expires"])
+        self.set_auth_cache(data)
         self.auth_response = data
 
         if self._get_token_callback:
@@ -100,15 +131,15 @@ class Rackspace(object):
             if serviceCatalog["type"] == "image":
                 for endpoint in serviceCatalog["endpoints"]:
                     if endpoint["region"] == region:
-                        self.my_region_images_public_endpoint_url = endpoint["publicURL"]
+                        self.region_images_public_endpoint_url = endpoint["publicURL"]
                         break
                 break
 
-        request_url = "%s/images?status=active" % (self.my_region_images_public_endpoint_url)
+        request_url = "%s/images?status=active" % (self.region_images_public_endpoint_url)
         self._build_http_request(self._got_gns3_images, request_url)
 
     def _got_gns3_images(self, response):
-        response.rethrow()
+        self._check_authentication(response)
         data = json.loads(response.body.decode('utf8'))
 
         image_list = []
@@ -120,9 +151,7 @@ class Rackspace(object):
                         "status" : image["status"],
                         "visibility" : image["visibility"], 
                     }
-                )
-
-        
+                )       
 
         if self._get_gns3_images_callback:
             self._get_gns3_images_callback(image_list)
@@ -140,7 +169,7 @@ class Rackspace(object):
             "member": self.tenant_id
             })
 
-        request_url = "%s/images/%s/members" % (self.my_region_images_public_endpoint_url, 
+        request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url, 
             self.image_id)
         self._build_http_request(self._got_share_image_by_id, request_url, request_data)
 
@@ -152,14 +181,8 @@ class Rackspace(object):
                 "status": "ALREADYREQUESTED"
                 }
         else:
-            response.rethrow()
+            self._check_authentication(response)
             data = json.loads(response.body.decode('utf8'))
 
         if self._share_image_by_id_callback:
             self._share_image_by_id_callback(data)
-
-    def share_image_by_name(self, tenant_id, image_name):
-        """
-        Share the provided image name with the tenant ID
-        """
-        pass
