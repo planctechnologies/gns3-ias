@@ -135,7 +135,11 @@ class Rackspace(object):
                         break
                 break
 
-        request_url = "%s/images?status=active" % (self.region_images_public_endpoint_url)
+        # filter images owned by me
+        request_url = "%s/images?status=active&owner=%s" % (
+            self.region_images_public_endpoint_url,
+            self.auth_response['access']['token']['tenant']['id'],
+        )
         self._build_http_request(self._got_gns3_images, request_url)
 
     def _got_gns3_images(self, response):
