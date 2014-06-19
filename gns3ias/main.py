@@ -193,8 +193,11 @@ def get_gns3secrets(cmd_line_option_list):
         if os.path.isfile(gns3secret_file):
             config.read(gns3secret_file)
 
-    for key, value in config.items("Cloud"):
-        cmd_line_option_list[key] = value.strip()
+    try:
+        for key, value in config.items("Cloud"):
+            cmd_line_option_list[key] = value.strip()
+    except configparser.NoSectionError:
+        pass
 
 
 def set_logging(cmd_options):
