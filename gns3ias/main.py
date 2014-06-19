@@ -381,14 +381,19 @@ class ImageAccessHandler(tornado.web.RequestHandler):
 
         gns3_<version>
         """
+        image_id = None
         gns3_pattern = "gns3_{}".format(self.gns3_version)
         for image in image_list:
             if gns3_pattern in image["name"]:
                 image_id = image["id"]
-       
 
+        # command line overrides url parameter
         if self.api_info["image_id"]:
             image_id = self.api_info["image_id"]
+
+        # image gns3_<version> not found
+        if image_id is None:
+            raise tornado.web.HTTPError(404)
 
         self.rksp.share_image_by_id(self._send_to_client,
             self.user_id,
