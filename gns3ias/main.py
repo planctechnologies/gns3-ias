@@ -373,7 +373,7 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         """
         Gets the ID of a matching image and shares it with a tenant.
 
-        The image ID that is shared can be overwritten with a command line
+        The image ID that is shared can be overridden with a command line
         argument (--image_id=<id>). This makes testing easier.
 
         gns3_<version>
