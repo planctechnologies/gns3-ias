@@ -193,8 +193,11 @@ def get_gns3secrets(cmd_line_option_list):
         if os.path.isfile(gns3secret_file):
             config.read(gns3secret_file)
 
-    for key, value in config.items("Cloud"):
-        cmd_line_option_list[key] = value.strip()
+    try:
+        for key, value in config.items("Cloud"):
+            cmd_line_option_list[key] = value.strip()
+    except configparser.NoSectionError:
+        pass
 
 
 def set_logging(cmd_options):
@@ -378,13 +381,19 @@ class ImageAccessHandler(tornado.web.RequestHandler):
 
         gns3_<version>
         """
+        image_id = None
+        gns3_pattern = "gns3_{}".format(self.gns3_version)
         for image in image_list:
-            if image["name"].find(self.gns3_version):
+            if gns3_pattern in image["name"]:
                 image_id = image["id"]
-       
 
+        # command line overrides url parameter
         if self.api_info["image_id"]:
             image_id = self.api_info["image_id"]
+
+        # image gns3_<version> not found
+        if image_id is None:
+            raise tornado.web.HTTPError(404)
 
         self.rksp.share_image_by_id(self._send_to_client,
             self.user_id,
