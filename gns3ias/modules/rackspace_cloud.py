@@ -135,7 +135,7 @@ class Rackspace(object):
                         break
                 break
 
-        # filter images owned by me
+        # Only look for images owned by my rackspace account
         request_url = "%s/images?status=active&owner=%s" % (
             self.region_images_public_endpoint_url,
             self.auth_response['access']['token']['tenant']['id'],
