@@ -381,8 +381,9 @@ class ImageAccessHandler(tornado.web.RequestHandler):
 
         gns3_<version>
         """
+        gns3_pattern = "gns3_{}".format(self.gns3_version)
         for image in image_list:
-            if image["name"].find(self.gns3_version):
+            if gns3_pattern in image["name"]:
                 image_id = image["id"]
        
 
