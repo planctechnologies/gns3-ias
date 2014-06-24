@@ -370,35 +370,34 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         """
         Gets a list of all images in a specific region
         """
-        self.rksp.get_gns3_images(self._share_image, self.user_region)
+        self.rksp.get_gns3_images(self._share_images, self.user_region)
 
-    def _share_image(self, image_list):
+    def _share_images(self, image_list):
         """
-        Gets the ID of a matching image and shares it with a tenant.
+        Gets the ID of all matching images and shares it with a tenant.
 
         The image ID that is shared can be overridden with a command line
         argument (--image_id=<id>). This makes testing easier.
 
         gns3_<version>
         """
-        image_id = None
+        image_ids = []
         gns3_pattern = "gns3_{}".format(self.gns3_version)
         for image in image_list:
             if gns3_pattern in image["name"]:
-                image_id = image["id"]
+                image_ids.append(image["id"])
 
         # command line overrides url parameter
         if self.api_info["image_id"]:
-            image_id = self.api_info["image_id"]
+            image_ids = [self.api_info["image_id"]]
 
         # image gns3_<version> not found
-        if image_id is None:
+        if len(image_ids) == 0:
             raise tornado.web.HTTPError(404)
 
-        self.rksp.share_image_by_id(self._send_to_client,
-            self.user_id,
-            image_id
-        )
+        self.rksp.share_images_by_id(self._send_to_client,
+                                    self.user_id,
+                                    image_ids)
 
     def _send_to_client(self, data):
         """

@@ -160,33 +160,49 @@ class Rackspace(object):
         if self._get_gns3_images_callback:
             self._get_gns3_images_callback(image_list)
 
-
-    def share_image_by_id(self, callback, tenant_id, image_id):
+    def share_images_by_id(self, callback, tenant_id, image_ids):
         """
-        Share the provided image ID with the tenant ID
+        Share the provided image IDs with the tenant ID
         """
-        self._share_image_by_id_callback = callback
-        self.tenant_id = tenant_id
-        self.image_id = image_id
-
+        # prepare http request for sharing an image
         request_data = json.dumps({
-            "member": self.tenant_id
-            })
+            "member": tenant_id
+        })
+        token = self.auth_response["access"]["token"]["id"]
+        log.info("Auth Token: %s" % token)
+        request_headers = {
+            "Content-Type": "application/json",
+            "X-Auth-Token": token,
+        }
 
-        request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url, 
-            self.image_id)
-        self._build_http_request(self._got_share_image_by_id, request_url, request_data)
+        # share each image synchronously
+        data = []
+        for image_id in image_ids:
+            request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url,
+                                                    image_id)
 
-    def _got_share_image_by_id(self, response):
-        if response.code == 409:
+            http_request = tornado.httpclient.HTTPRequest(
+                url=request_url,
+                method="POST",
+                headers=request_headers,
+                body=request_data,
+            )
 
-            data = { "image_id": self.image_id, 
-                "member_id": self.tenant_id, 
-                "status": "ALREADYREQUESTED"
-                }
-        else:
-            self._check_authentication(response)
-            data = json.loads(response.body.decode('utf8'))
+            try:
+                http_client = tornado.httpclient.HTTPClient()
+                response = http_client.fetch(http_request)
+                data.append(json.loads(response.body.decode('utf8')))
+            except tornado.httpclient.HTTPError as e:
+                if e.code == 409:
+                    data.append({
+                        "image_id": image_id,
+                        "member_id": tenant_id,
+                        "status": "ALREADYREQUESTED"
+                    })
+                else:
+                    raise
+            finally:
+                http_client.close()
 
-        if self._share_image_by_id_callback:
-            self._share_image_by_id_callback(data)
+        if callback:
+            callback(json.dumps(data))
