@@ -160,7 +160,7 @@ class Rackspace(object):
         if self._get_gns3_images_callback:
             self._get_gns3_images_callback(image_list)
 
-    def share_images_by_id(self, callback, tenant_id, image_ids):
+    def share_images_by_id(self, callback, tenant_id, images):
         """
         Share the provided image IDs with the tenant ID
         """
@@ -177,7 +177,7 @@ class Rackspace(object):
 
         # share each image synchronously
         data = []
-        for image_id in image_ids:
+        for image_id, image_name in images.items():
             request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url,
                                                     image_id)
 
@@ -191,10 +191,13 @@ class Rackspace(object):
             try:
                 http_client = tornado.httpclient.HTTPClient()
                 response = http_client.fetch(http_request)
-                data.append(json.loads(response.body.decode('utf8')))
+                response_data = json.loads(response.body.decode('utf8'))
+                response_data["image_name"] = image_name
+                data.append(response_data)
             except tornado.httpclient.HTTPError as e:
                 if e.code == 409:
                     data.append({
+                        "image_name": image_name,
                         "image_id": image_id,
                         "member_id": tenant_id,
                         "status": "ALREADYREQUESTED"

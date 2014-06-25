@@ -381,23 +381,23 @@ class ImageAccessHandler(tornado.web.RequestHandler):
 
         gns3_<version>
         """
-        image_ids = []
+        images = {}
         gns3_pattern = "gns3_{}".format(self.gns3_version)
         for image in image_list:
             if gns3_pattern in image["name"]:
-                image_ids.append(image["id"])
+                images[image["id"]] = image["name"]
 
-        # command line overrides url parameter
+        # command line overrides url parameter, give it a fake name
         if self.api_info["image_id"]:
-            image_ids = [self.api_info["image_id"]]
+            images = {self.api_info["image_id"]: 'command_line'}
 
         # image gns3_<version> not found
-        if len(image_ids) == 0:
+        if len(images) == 0:
             raise tornado.web.HTTPError(404)
 
         self.rksp.share_images_by_id(self._send_to_client,
                                      self.user_id,
-                                     image_ids)
+                                     images)
 
     def _send_to_client(self, data):
         """
