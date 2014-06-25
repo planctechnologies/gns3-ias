@@ -396,8 +396,8 @@ class ImageAccessHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError(404)
 
         self.rksp.share_images_by_id(self._send_to_client,
-                                    self.user_id,
-                                    image_ids)
+                                     self.user_id,
+                                     image_ids)
 
     def _send_to_client(self, data):
         """
@@ -408,7 +408,7 @@ class ImageAccessHandler(tornado.web.RequestHandler):
         """
 
         self.write(data)
-        self.stats['client_total_requests_ok']+=1
+        self.stats['client_total_requests_ok'] += 1
         self.finish()
 
 
