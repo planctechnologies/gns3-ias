@@ -27,6 +27,8 @@ import os
 import json
 import tornado.ioloop
 import tornado.httpclient
+import tornado.gen
+import tornado.web
 import urllib.request
 import urllib.parse
 from dateutil.parser import *
@@ -160,6 +162,7 @@ class Rackspace(object):
         if self._get_gns3_images_callback:
             self._get_gns3_images_callback(image_list)
 
+    @tornado.gen.coroutine
     def share_images_by_id(self, callback, tenant_id, images):
         """
         Share the provided image IDs with the tenant ID
@@ -175,12 +178,11 @@ class Rackspace(object):
             "X-Auth-Token": token,
         }
 
-        # share each image synchronously
         data = []
         for image_id, image_name in images.items():
             request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url,
                                                     image_id)
-
+            log.info("Request URL: %s" % request_url)
             http_request = tornado.httpclient.HTTPRequest(
                 url=request_url,
                 method="POST",
@@ -188,14 +190,12 @@ class Rackspace(object):
                 body=request_data,
             )
 
-            try:
-                http_client = tornado.httpclient.HTTPClient()
-                response = http_client.fetch(http_request)
-                response_data = json.loads(response.body.decode('utf8'))
-                response_data["image_name"] = image_name
-                data.append(response_data)
-            except tornado.httpclient.HTTPError as e:
-                if e.code == 409:
+            tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+            http_client = tornado.httpclient.AsyncHTTPClient()
+            response = yield tornado.gen.Task(http_client.fetch, http_request)
+
+            if response.error:
+                if response.code == 409:
                     data.append({
                         "image_name": image_name,
                         "image_id": image_id,
@@ -203,9 +203,11 @@ class Rackspace(object):
                         "status": "ALREADYREQUESTED"
                     })
                 else:
-                    raise
-            finally:
-                http_client.close()
+                    response.rethrow()
+            else:
+                response_data = json.loads(response.body.decode('utf8'))
+                response_data["image_name"] = image_name
+                data.append(response_data)
 
         if callback:
             callback(json.dumps(data))
