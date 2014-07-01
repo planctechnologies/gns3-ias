@@ -188,6 +188,8 @@ class Rackspace(object):
                 method="POST",
                 headers=request_headers,
                 body=request_data,
+                connect_timeout=10,  # default is 20
+                request_timeout=10,  # default is 20
             )
 
             tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
@@ -202,8 +204,6 @@ class Rackspace(object):
                         "member_id": tenant_id,
                         "status": "ALREADYREQUESTED"
                     })
-                else:
-                    response.rethrow()
             else:
                 response_data = json.loads(response.body.decode('utf8'))
                 response_data["image_name"] = image_name
