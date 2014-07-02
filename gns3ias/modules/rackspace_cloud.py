@@ -180,7 +180,7 @@ class Rackspace(object):
 
         data = []
         for image_id, image_name in images.items():
-            request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url,
+            request_url = "%s/images/%s/members" % ('http://localhost:8889',#self.region_images_public_endpoint_url,
                                                     image_id)
             log.info("Request URL: %s" % request_url)
             http_request = tornado.httpclient.HTTPRequest(
@@ -197,13 +197,12 @@ class Rackspace(object):
             response = yield tornado.gen.Task(http_client.fetch, http_request)
 
             if response.error:
-                if response.code == 409:
-                    data.append({
-                        "image_name": image_name,
-                        "image_id": image_id,
-                        "member_id": tenant_id,
-                        "status": "ALREADYREQUESTED"
-                    })
+                data.append({
+                    "image_name": image_name,
+                    "image_id": image_id,
+                    "member_id": tenant_id,
+                    "status": "ALREADYREQUESTED" if response.code == 409 else "FAILED"
+                })
             else:
                 response_data = json.loads(response.body.decode('utf8'))
                 response_data["image_name"] = image_name
