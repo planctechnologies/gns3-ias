@@ -27,6 +27,8 @@ import os
 import json
 import tornado.ioloop
 import tornado.httpclient
+import tornado.gen
+import tornado.web
 import urllib.request
 import urllib.parse
 from dateutil.parser import *
@@ -160,33 +162,51 @@ class Rackspace(object):
         if self._get_gns3_images_callback:
             self._get_gns3_images_callback(image_list)
 
-
-    def share_image_by_id(self, callback, tenant_id, image_id):
+    @tornado.gen.coroutine
+    def share_images_by_id(self, callback, tenant_id, images):
         """
-        Share the provided image ID with the tenant ID
+        Share the provided image IDs with the tenant ID
         """
-        self._share_image_by_id_callback = callback
-        self.tenant_id = tenant_id
-        self.image_id = image_id
-
+        # prepare http request for sharing an image
         request_data = json.dumps({
-            "member": self.tenant_id
-            })
+            "member": tenant_id
+        })
+        token = self.auth_response["access"]["token"]["id"]
+        log.info("Auth Token: %s" % token)
+        request_headers = {
+            "Content-Type": "application/json",
+            "X-Auth-Token": token,
+        }
 
-        request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url, 
-            self.image_id)
-        self._build_http_request(self._got_share_image_by_id, request_url, request_data)
+        data = []
+        for image_id, image_name in images.items():
+            request_url = "%s/images/%s/members" % ('http://localhost:8889',#self.region_images_public_endpoint_url,
+                                                    image_id)
+            log.info("Request URL: %s" % request_url)
+            http_request = tornado.httpclient.HTTPRequest(
+                url=request_url,
+                method="POST",
+                headers=request_headers,
+                body=request_data,
+                connect_timeout=10,  # default is 20
+                request_timeout=10,  # default is 20
+            )
 
-    def _got_share_image_by_id(self, response):
-        if response.code == 409:
+            tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+            http_client = tornado.httpclient.AsyncHTTPClient()
+            response = yield tornado.gen.Task(http_client.fetch, http_request)
 
-            data = { "image_id": self.image_id, 
-                "member_id": self.tenant_id, 
-                "status": "ALREADYREQUESTED"
-                }
-        else:
-            self._check_authentication(response)
-            data = json.loads(response.body.decode('utf8'))
+            if response.error:
+                data.append({
+                    "image_name": image_name,
+                    "image_id": image_id,
+                    "member_id": tenant_id,
+                    "status": "ALREADYREQUESTED" if response.code == 409 else "FAILED"
+                })
+            else:
+                response_data = json.loads(response.body.decode('utf8'))
+                response_data["image_name"] = image_name
+                data.append(response_data)
 
-        if self._share_image_by_id_callback:
-            self._share_image_by_id_callback(data)
+        if callback:
+            callback(json.dumps(data))
