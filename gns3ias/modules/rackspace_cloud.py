@@ -81,7 +81,7 @@ class Rackspace(object):
                 body = request_data,
             )
 
-        tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+        tornado.httpclient.AsyncHTTPClient.configure("tornado.simple_httpclient.SimpleAsyncHTTPClient")
         http_client = tornado.httpclient.AsyncHTTPClient()
         http_client.fetch(http_request, callback)
 
@@ -180,7 +180,7 @@ class Rackspace(object):
 
         data = []
         for image_id, image_name in images.items():
-            request_url = "%s/images/%s/members" % ('http://localhost:8889',#self.region_images_public_endpoint_url,
+            request_url = "%s/images/%s/members" % (self.region_images_public_endpoint_url,
                                                     image_id)
             log.info("Request URL: %s" % request_url)
             http_request = tornado.httpclient.HTTPRequest(
@@ -192,7 +192,7 @@ class Rackspace(object):
                 request_timeout=10,  # default is 20
             )
 
-            tornado.httpclient.AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient")
+            tornado.httpclient.AsyncHTTPClient.configure("tornado.simple_httpclient.SimpleAsyncHTTPClient")
             http_client = tornado.httpclient.AsyncHTTPClient()
             response = yield tornado.gen.Task(http_client.fetch, http_request)
 
