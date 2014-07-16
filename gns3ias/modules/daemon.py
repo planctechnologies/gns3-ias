@@ -1,6 +1,9 @@
 """Generic linux daemon base class for python 3.x."""
 
 import sys, os, time, atexit, signal
+import logging
+LOG_NAME = "gns3ias"
+log = logging.getLogger("%s" % (LOG_NAME))
 
 class daemon:
     """A generic daemon class.
@@ -54,6 +57,7 @@ class daemon:
         atexit.register(self.delpid)
 
         pid = str(os.getpid())
+        log.debug("Writing PID file: %s" % (self.pidfile))
         with open(self.pidfile,'w+') as f:
             f.write(pid + '\n')
     

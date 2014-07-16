@@ -39,6 +39,9 @@ import glob
 import json
 import signal
 import configparser
+from os.path import expanduser
+from logging.handlers import *
+
 
 import tornado.ioloop
 import tornado.web
@@ -141,6 +144,14 @@ def parse_cmd_line(argv):
     cmd_line_option_list["shutdown"] = False
     cmd_line_option_list["daemon"] = False
 
+    if sys.platform == "linux":
+        cmd_line_option_list['syslog'] = "/dev/log"
+    elif sys.platform == "osx":
+        cmd_line_option_list['syslog'] = "/var/run/syslog"
+    else:
+        cmd_line_option_list['syslog'] = ('localhost',514)
+
+
     get_gns3secrets(cmd_line_option_list)
 
     for opt, val in opts:
@@ -216,27 +227,39 @@ def set_logging(cmd_options):
         log_level = logging.DEBUG
 
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    sys_formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
 
     console_log = logging.StreamHandler()
     console_log.setLevel(log_level_console)
     console_log.setFormatter(formatter)
 
+    syslog_hndlr = SysLogHandler(
+        address=cmd_options['syslog'],
+        facility=SysLogHandler.LOG_USER
+    )
+
+    syslog_hndlr.setFormatter(sys_formatter)
+
     log.setLevel(log_level)
     log.addHandler(console_log)
+    log.addHandler(syslog_hndlr)
 
     access_log = logging.getLogger("tornado.access")
     access_log.setLevel(log_level)
     access_log.addHandler(console_log)
+    access_log.addHandler(syslog_hndlr)
 
     return log
 
 def send_shutdown(pid_file):
-    with open(pid_file, 'r') as pidf:
-        pid = int(pidf.readline().strip())
-        pidf.close()
-
-
-    os.kill(pid, 15)
+    try:
+        with open(pid_file, 'r') as pidf:
+            pid = int(pidf.readline().strip())
+            pidf.close()
+            os.kill(pid, 15)
+    except:
+        log.info("No running instance found!!!")
+        log.info("Missing PID file: %s" % (pid_file))
 
 def main():
 
@@ -263,17 +286,12 @@ def main():
         log.warning("Received shutdown signal")
         tornado.ioloop.IOLoop.instance().stop()
         log.warning("IO stopped")
-        
 
-    pid_file = "%s/%s.pid" % (SCRIPT_PATH, SCRIPT_NAME)
+    pid_file = "%s/.gns3ias.pid" % (expanduser("~"))
 
     if options["shutdown"]:
         send_shutdown(pid_file)
         sys.exit(0)
-
-    if options["daemon"]:
-        print("Starting in background ...\n")
-        my_daemon = MyDaemon(pid_file, options)
 
     # Setup signal to catch Control-C / SIGINT and SIGTERM
     signal.signal(signal.SIGINT, _shutdown)
@@ -283,9 +301,14 @@ def main():
     for key, value in iter(sorted(options.items())):
         log.debug("%s : %s" % (key, value))
     
-    log.warning("Starting ...")
+    if options["daemon"]:
+        log.info("Starting in background ...")
+        my_daemon = MyDaemon(pid_file, options)
+    else:
+        log.info("Starting ...")
 
     if my_daemon:
+        options["tornado_application"] = application
         my_daemon.start()
     else:
         application.listen(options["port"])
@@ -294,7 +317,10 @@ def main():
 
 class MyDaemon(daemon.daemon):
     def run(self):
+        application = self.options["tornado_application"]
+        log.debug("Background Daemon: Listening on socket")
         application.listen(self.options["port"])
+        log.debug("Background Daemon: Starting IOLOOP")
         tornado.ioloop.IOLoop.instance().start()
 
 class MainHandler(tornado.web.RequestHandler):
