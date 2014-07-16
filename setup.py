@@ -46,7 +46,6 @@ setup(
     long_description=open("README.rst", "r").read(),
     install_requires=[
         "tornado>=3.1",
-        "pyzmq>=13.1.0",  # this is the strict minimum, recommended is >= 14.0.0
         "jsonschema==2.3.0",
         "pycurl>=7.19.3.1",
         "python-dateutil>=2.2",
