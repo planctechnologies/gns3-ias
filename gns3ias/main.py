@@ -34,8 +34,6 @@ import time
 import getopt
 import datetime
 import logging
-import fcntl
-import glob
 import json
 import signal
 import configparser
